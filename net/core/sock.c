@@ -141,9 +141,9 @@
 #include <net/tcp.h>
 #endif
 
-#ifdef CONFIG_ANDROID_PARANOID_NETWORK
+//#ifdef CONFIG_ANDROID_PARANOID_NETWORK
 #include <linux/android_aid.h>
-#endif
+//#endif
 
 #include <net/busy_poll.h>
 
