@@ -46,36 +46,6 @@ char *xstrdup(const char *s)
 	return d;
 }
 
-/* based in part from (3) vsnprintf */
-int xasprintf(char **strp, const char *fmt, ...)
-{
-	int n, size = 128;	/* start with 128 bytes */
-	char *p;
-	va_list ap;
-
-	/* initial pointer is NULL making the fist realloc to be malloc */
-	p = NULL;
-	while (1) {
-		p = xrealloc(p, size);
-
-		/* Try to print in the allocated space. */
-		va_start(ap, fmt);
-		n = vsnprintf(p, size, fmt, ap);
-		va_end(ap);
-
-		/* If that worked, return the string. */
-		if (n > -1 && n < size)
-			break;
-		/* Else try again with more space. */
-		if (n > -1)	/* glibc 2.1 */
-			size = n + 1; /* precisely what is needed */
-		else		/* glibc 2.0 */
-			size *= 2; /* twice the old size */
-	}
-	*strp = p;
-	return strlen(p);
-}
-
 char *join_path(const char *path, const char *name)
 {
 	int lenp = strlen(path);
@@ -182,6 +152,7 @@ char get_escape_char(const char *s, int *i)
 	int	j = *i + 1;
 	char	val;
 
+	assert(c);
 	switch (c) {
 	case 'a':
 		val = '\a';
@@ -227,11 +198,11 @@ char get_escape_char(const char *s, int *i)
 	return val;
 }
 
-int utilfdt_read_err(const char *filename, char **buffp, size_t *len)
+int utilfdt_read_err_len(const char *filename, char **buffp, off_t *len)
 {
 	int fd = 0;	/* assume stdin */
 	char *buf = NULL;
-	size_t bufsize = 1024, offset = 0;
+	off_t bufsize = 1024, offset = 0;
 	int ret = 0;
 
 	*buffp = NULL;
@@ -264,15 +235,20 @@ int utilfdt_read_err(const char *filename, char **buffp, size_t *len)
 		free(buf);
 	else
 		*buffp = buf;
-	if (len)
-		*len = bufsize;
+	*len = bufsize;
 	return ret;
 }
 
-char *utilfdt_read(const char *filename, size_t *len)
+int utilfdt_read_err(const char *filename, char **buffp)
+{
+	off_t len;
+	return utilfdt_read_err_len(filename, buffp, &len);
+}
+
+char *utilfdt_read_len(const char *filename, off_t *len)
 {
 	char *buff;
-	int ret = utilfdt_read_err(filename, &buff, len);
+	int ret = utilfdt_read_err_len(filename, &buff, len);
 
 	if (ret) {
 		fprintf(stderr, "Couldn't open blob from '%s': %s\n", filename,
@@ -281,6 +257,12 @@ char *utilfdt_read(const char *filename, size_t *len)
 	}
 	/* Successful read */
 	return buff;
+}
+
+char *utilfdt_read(const char *filename)
+{
+	off_t len;
+	return utilfdt_read_len(filename, &len);
 }
 
 int utilfdt_write_err(const char *filename, const void *blob)
@@ -367,6 +349,7 @@ int utilfdt_decode_type(const char *fmt, int *type, int *size)
 void utilfdt_print_data(const char *data, int len)
 {
 	int i;
+	const char *p = data;
 	const char *s;
 
 	/* no data, don't print */
@@ -385,7 +368,7 @@ void utilfdt_print_data(const char *data, int len)
 		} while (s < data + len);
 
 	} else if ((len % 4) == 0) {
-		const fdt32_t *cell = (const fdt32_t *)data;
+		const uint32_t *cell = (const uint32_t *)data;
 
 		printf(" = <");
 		for (i = 0, len /= 4; i < len; i++)
@@ -393,7 +376,6 @@ void utilfdt_print_data(const char *data, int len)
 			       i < (len - 1) ? " " : "");
 		printf(">");
 	} else {
-		const unsigned char *p = (const unsigned char *)data;
 		printf(" = [");
 		for (i = 0; i < len; i++)
 			printf("%02x%s", *p++, i < len - 1 ? " " : "");
@@ -401,16 +383,15 @@ void utilfdt_print_data(const char *data, int len)
 	}
 }
 
-void NORETURN util_version(void)
+void util_version(void)
 {
 	printf("Version: %s\n", DTC_VERSION);
 	exit(0);
 }
 
-void NORETURN util_usage(const char *errmsg, const char *synopsis,
-			 const char *short_opts,
-			 struct option const long_opts[],
-			 const char * const opts_help[])
+void util_usage(const char *errmsg, const char *synopsis,
+		const char *short_opts, struct option const long_opts[],
+		const char * const opts_help[])
 {
 	FILE *fp = errmsg ? stderr : stdout;
 	const char a_arg[] = "<arg>";
